@@ -1,81 +1,83 @@
-# Avicenna Pharmacy — Windows Desktop (.exe) Build Guide
+# Avicenna Pharmacy — Offline Windows .exe (Lifetime, No Internet)
 
-This folder turns your already-deployed Avicenna Pharmacy web app into a real **Windows .exe** using **Electron**. You only need to do these steps **once on any Windows PC** to produce the installer; after that you can copy/install the `.exe` anywhere.
+This packages your pharmacy app into a **fully offline Windows .exe**. Once built and installed, it runs forever on any Windows PC with **zero internet, no Emergent, no monthly cost**.
 
-> Your deployed web URL is baked in: `https://rx-inventory-hub-6.emergent.host`
-> The desktop app needs an internet connection to reach it.
+## What you get
 
----
-
-## Prerequisites (one-time setup on a Windows machine)
-
-1. **Install Node.js LTS** (v18 or v20) → https://nodejs.org/en/download
-   After install, open **Command Prompt** and verify:
-   ```
-   node --version
-   npm --version
-   ```
-
-2. **Copy this `desktop/` folder** from your Emergent project onto your Windows PC (e.g. via GitHub push, or download from Emergent).
-
-3. *(Optional)* Replace `assets/icon.ico` with your own 256×256 `.ico` file for a custom app icon. A placeholder is fine — Electron will use a default icon if missing.
+- A real Windows installer `.exe` (and an optional portable single-file `.exe`).
+- All data (items, sales, stock) stored locally in a JSON file on the PC:
+  `C:\Users\<you>\AppData\Roaming\Avicenna Pharmacy\pharmacy.json`
+- Pre-loaded with 12 sample pharmacy items on first launch.
+- Camera barcode scanner + USB barcode scanner both work offline.
+- No server, no MongoDB, no Python — just the .exe.
 
 ---
 
-## Build the .exe
+## How to build it (one-time, on a Windows PC)
 
-Open Command Prompt **inside the `desktop` folder** and run:
+### Prerequisites
+1. **Node.js LTS** (v18 or v20) → https://nodejs.org/en/download/
+2. **Yarn** (run once after Node install): `npm install -g yarn`
+3. The whole `/app` folder from Emergent on your PC (push to GitHub → `git clone`, or download the project).
+
+### One command
+Open Command Prompt inside the `desktop` folder and run:
 
 ```
+build-exe.bat
+```
+
+That single batch file does everything:
+1. Builds the React frontend (with `PUBLIC_URL=./` so it loads from `file://`).
+2. Copies the build into `desktop/app/`.
+3. Installs Electron + electron-builder.
+4. Produces the installer.
+
+When it finishes (~3–5 min the first time), look in **`desktop/dist/`** — you'll see:
+
+| File | Description |
+|---|---|
+| `Avicenna Pharmacy Setup 1.0.0.exe` | Installer (creates desktop + Start-menu shortcuts) |
+| `Avicenna Pharmacy 1.0.0.exe`       | Portable single-file (just double-click, no install) |
+
+Copy either `.exe` to any Windows PC and it runs. **No internet ever needed.**
+
+---
+
+## Where is the data stored?
+
+On the PC that runs the .exe:
+```
+C:\Users\<username>\AppData\Roaming\Avicenna Pharmacy\pharmacy.json
+```
+
+- This file is created on first launch and seeded with 12 sample items.
+- Back it up by simply copying that file.
+- Move it to another PC by copying the same file into the same path on the new PC.
+- The app menu **File → Open data folder** opens this location directly.
+
+---
+
+## Test it without building (developer mode)
+
+```
+cd desktop
 npm install
-npm run build:installer
-```
-
-When it finishes (1–3 minutes), look in the **`dist/`** sub-folder. You will find:
-
-- **`Avicenna Pharmacy Setup 1.0.0.exe`** — a normal Windows installer (creates Start-menu + Desktop shortcuts).
-
-Want a single-file portable executable that needs no installation? Run instead:
-
-```
-npm run build:portable
-```
-
-That produces **`Avicenna Pharmacy 1.0.0.exe`** — a portable .exe you can put on a USB stick.
-
----
-
-## Test it before building
-
-To preview the desktop app *without* packaging:
-
-```
-npm install
+cd ..\frontend && set PUBLIC_URL=./ && yarn build && cd ..\desktop
+xcopy /e /i /y ..\frontend\build app
 npm start
 ```
 
-A native window will open and load your pharmacy app.
+Or just run `build-exe.bat` once, then `npm start` for repeat tests.
 
 ---
 
-## Pointing the .exe at a different server (advanced)
+## Customising
 
-The URL is read from the environment variable `AVICENNA_URL`. To run it against, say, a local backend:
-
-```
-set AVICENNA_URL=http://localhost:3000
-"Avicenna Pharmacy.exe"
-```
-
----
-
-## Notes & limits
-
-- **Internet required.** The desktop window is a thin shell around your deployed Emergent web app — when you redeploy, the .exe automatically picks up the new version on next launch (no rebuild needed).
-- **Camera barcode scanner** works inside the desktop app — the necessary `camera` permission is auto-granted by `main.js`.
-- **USB barcode scanners** work out of the box (they act as keyboards).
-- **MongoDB / FastAPI** are *not* bundled. The backend keeps running on Emergent's servers; the .exe is just the front-end window.
-- If you ever need a fully **offline** desktop version (no internet, local database), that's a separate, larger rewrite — let me know and I can plan it.
+- **App icon**: drop a 256×256 `icon.ico` into `desktop/assets/`. (Without one, Electron uses a default icon.)
+- **App name**: edit `productName` in `desktop/package.json`.
+- **Camera scanner**: works out of the box if Windows has camera permission for the app.
+- **Different data location**: not exposed by default; the file is at the standard Windows AppData path.
 
 ---
 
@@ -83,9 +85,18 @@ set AVICENNA_URL=http://localhost:3000
 
 | Problem | Fix |
 |---|---|
-| `npm install` fails on Windows | Run Command Prompt as Administrator, or set `npm config set msvs_version 2019` |
+| `yarn` not recognised | Run `npm install -g yarn` first |
+| `npm install` errors on first run | Run Command Prompt **as Administrator** |
+| `electron-builder` errors about symlinks | Same — Admin Command Prompt fixes most issues |
+| Antivirus flags the unsigned `.exe` | Normal for unsigned Electron builds. To make the warning go away you need a paid code-signing certificate (~$70/yr). |
 | Camera doesn't open | Windows → Settings → Privacy → Camera → allow desktop apps |
-| "Cannot reach Avicenna Pharmacy" dialog | Check internet, or that the production URL is up |
-| Antivirus flags the .exe | Common for unsigned Electron apps. To remove the warning, you can later buy a code-signing certificate. |
+| Want to wipe and start over | Delete `pharmacy.json` from the AppData folder shown above |
 
-That's it — you now have a Windows .exe of your pharmacy app.
+---
+
+## What this isn't
+
+- **Not** a multi-PC system. Each .exe has its own local database. If you want multiple cashiers sharing inventory in real-time, you'd need a small LAN server (different project).
+- **Not** a SaaS / cloud version — that's already running at your Emergent deployment URL.
+
+That's it — **build once, use forever**.

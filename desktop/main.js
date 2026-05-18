@@ -1,14 +1,31 @@
-// Avicenna Pharmacy — Electron main process
-// Wraps the deployed web app inside a native Windows window.
+// Avicenna Pharmacy — Fully offline Electron main process.
+// Bundles the React build + local JSON database. No internet required.
 
-const { app, BrowserWindow, Menu, shell, dialog } = require('electron');
+const { app, BrowserWindow, Menu, shell, dialog, ipcMain } = require('electron');
 const path = require('path');
-
-// You can override the URL by setting AVICENNA_URL env var, otherwise
-// the production deployment is used.
-const APP_URL = process.env.AVICENNA_URL || 'https://rx-inventory-hub-6.emergent.host';
+const db = require('./db');
 
 let mainWindow;
+
+function wireIpc() {
+    const safe = (fn) => async (_evt, ...args) => {
+        try {
+            return { ok: true, data: await fn(...args) };
+        } catch (e) {
+            return { ok: false, error: e.message || String(e) };
+        }
+    };
+
+    ipcMain.handle('items:list', safe(() => db.listItems()));
+    ipcMain.handle('items:getByBarcode', safe((code) => db.getItemByBarcode(code)));
+    ipcMain.handle('items:get', safe((id) => db.getItem(id)));
+    ipcMain.handle('items:create', safe((payload) => db.createItem(payload)));
+    ipcMain.handle('items:update', safe((id, payload) => db.updateItem(id, payload)));
+    ipcMain.handle('items:delete', safe((id) => db.deleteItem(id)));
+    ipcMain.handle('sales:checkout', safe((payload) => db.checkout(payload)));
+    ipcMain.handle('sales:list', safe(() => db.listSales()));
+    ipcMain.handle('app:dbPath', safe(() => db.getDbPath()));
+}
 
 function createWindow() {
     mainWindow = new BrowserWindow({
@@ -24,30 +41,23 @@ function createWindow() {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
             nodeIntegration: false,
-            // Camera (barcode scanner) needs these
-            webSecurity: true,
         },
     });
 
-    // Camera permission for the html5-qrcode barcode scanner
     mainWindow.webContents.session.setPermissionRequestHandler(
-        (webContents, permission, callback) => {
-            if (permission === 'media' || permission === 'camera') {
-                callback(true);
-            } else {
-                callback(false);
-            }
+        (_wc, permission, callback) => {
+            callback(permission === 'media' || permission === 'camera');
         }
     );
 
-    mainWindow.loadURL(APP_URL).catch((err) => {
+    const indexPath = path.join(__dirname, 'app', 'index.html');
+    mainWindow.loadFile(indexPath).catch((err) => {
         dialog.showErrorBox(
-            'Cannot reach Avicenna Pharmacy',
-            `Failed to load ${APP_URL}\n\n${err.message}\n\nMake sure you have an internet connection, or set AVICENNA_URL to your local server.`
+            'Failed to start Avicenna Pharmacy',
+            `Could not load app from:\n${indexPath}\n\n${err.message}\n\nThe app build may be missing. Re-run build-exe.bat.`
         );
     });
 
-    // Open external links in default browser instead of inside app
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
         shell.openExternal(url);
         return { action: 'deny' };
@@ -58,15 +68,17 @@ function createWindow() {
     });
 }
 
-// Simple File menu with reload / quit
 function buildMenu() {
     const template = [
         {
             label: 'File',
             submenu: [
-                { role: 'reload', label: 'Reload' },
-                { role: 'forceReload', label: 'Force Reload' },
+                {
+                    label: 'Open data folder',
+                    click: () => shell.showItemInFolder(db.getDbPath()),
+                },
                 { type: 'separator' },
+                { role: 'reload', label: 'Reload' },
                 { role: 'quit', label: 'Exit' },
             ],
         },
@@ -90,7 +102,7 @@ function buildMenu() {
                             type: 'info',
                             title: 'About Avicenna Pharmacy',
                             message: 'Avicenna Pharmacy Desktop',
-                            detail: `Version 1.0.0\nLoading: ${APP_URL}`,
+                            detail: `Version 1.0.0 — Offline edition.\nData file: ${db.getDbPath()}`,
                         });
                     },
                 },
@@ -101,6 +113,8 @@ function buildMenu() {
 }
 
 app.whenReady().then(() => {
+    db.init(app.getPath('userData'));
+    wireIpc();
     buildMenu();
     createWindow();
 

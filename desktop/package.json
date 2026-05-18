@@ -2,15 +2,15 @@
   "name": "avicenna-pharmacy-desktop",
   "productName": "Avicenna Pharmacy",
   "version": "1.0.0",
-  "description": "Desktop wrapper for the Avicenna Pharmacy Management web app",
+  "description": "Fully offline desktop pharmacy management — Cashier + Storage. Data stored locally.",
   "main": "main.js",
   "author": "Avicenna Pharmacy",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "build:win": "electron-builder --win --x64",
+    "build:installer": "electron-builder --win nsis --x64",
     "build:portable": "electron-builder --win portable --x64",
-    "build:installer": "electron-builder --win nsis --x64"
+    "build:all": "electron-builder --win --x64"
   },
   "devDependencies": {
     "electron": "^31.0.0",
@@ -19,9 +19,12 @@
   "build": {
     "appId": "com.avicenna.pharmacy",
     "productName": "Avicenna Pharmacy",
+    "asar": true,
     "files": [
       "main.js",
       "preload.js",
+      "db.js",
+      "app/**/*",
       "assets/**/*"
     ],
     "win": {
