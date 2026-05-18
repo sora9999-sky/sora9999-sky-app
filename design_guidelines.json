@@ -1,0 +1,92 @@
+{
+  "project_name": "Pharmacy Management App",
+  "theme": "light",
+  "archetype": "Organic & Earthy + Pastel & Soft (Friendly Medical)",
+  "vibe": "Friendly, trustworthy, modern, professional but slightly playful, calming yet vibrant.",
+  "typography": {
+    "fonts": [
+      {
+        "family": "Outfit",
+        "usage": "Headings, primary numbers, and brand text. Provides a clean, modern, and slightly rounded tech feel.",
+        "weights": ["400", "600", "700"]
+      },
+      {
+        "family": "Nunito",
+        "usage": "Body text, inputs, data tables. Highly readable with a friendly, soft geometric structure.",
+        "weights": ["400", "500", "600"]
+      }
+    ],
+    "rules": {
+      "headings": "tracking-tight text-stone-900",
+      "body": "leading-relaxed text-stone-600",
+      "currency": "font-bold text-emerald-700 tracking-tight"
+    }
+  },
+  "colors": {
+    "background": {
+      "app": "bg-[#F9FAFB]",
+      "surface": "bg-white",
+      "surface_alt": "bg-emerald-50/50"
+    },
+    "brand": {
+      "primary": "bg-emerald-500 hover:bg-emerald-600",
+      "primary_text": "text-emerald-700",
+      "secondary": "bg-indigo-500 hover:bg-indigo-600",
+      "secondary_text": "text-indigo-700"
+    },
+    "status": {
+      "success": "text-emerald-600 bg-emerald-100",
+      "warning": "text-amber-700 bg-amber-100",
+      "danger": "text-rose-600 bg-rose-100",
+      "danger_action": "bg-rose-500 hover:bg-rose-600 text-white"
+    },
+    "neutrals": {
+      "text_main": "text-stone-900",
+      "text_muted": "text-stone-500",
+      "border": "border-stone-200",
+      "divider": "divide-stone-100"
+    },
+    "forbidden_colors": ["#1B93A4", "#9D4CDD", "#7351B7"]
+  },
+  "layout_strategy": {
+    "spacing": "Generous spacing. Use p-6, p-8 for containers. Gap-6 for grid items.",
+    "borders_and_shadows": "Containers must have rounded-2xl or rounded-3xl. Use soft, diffuse ambient shadows (e.g., shadow-sm or shadow-[0_8px_30px_rgb(0,0,0,0.04)]). Borders should be subtle (border border-stone-100).",
+    "pages": {
+      "Cashier_POS": {
+        "layout": "Grid split layout. Left (70%): Search bar + Camera scanner toggle + Quick items grid. Right (30%): Fixed Cart/Bill sidebar stretching full height.",
+        "cart_items": "Must have prominent, circular (-) and (+) buttons with high contrast hover states. Display total boldly at the bottom."
+      },
+      "Storage": {
+        "layout": "Control Room Grid. Top section: Search/Filter + Add New Item button. Main section: Dense but padded data table or bento grid of inventory items.",
+        "indicators": "Use visual color pills for stock levels (e.g., red for low stock, green for healthy)."
+      }
+    }
+  },
+  "component_rules": {
+    "inputs": "Over-sized for easy clicking (h-12 or h-14). rounded-xl. Focus state: ring-2 ring-emerald-500/50 border-emerald-500.",
+    "buttons": "Chunky and soft. rounded-xl. Font-semibold. Always have a lighter text color hover transition.",
+    "tables": "Go cardless for the table itself, but wrap the table container in a rounded-2xl white background with generous padding.",
+    "icons": "Use lucide-react. Stroke width 2 for clear, friendly iconography."
+  },
+  "testing": {
+    "rules": "All interactive elements, buttons, inputs, cart items, and totals MUST have a data-testid attribute (e.g., data-testid='checkout-button', data-testid='cart-item-increase')."
+  },
+  "instructions_to_main_agent": [
+    "1. Setup Routing: Two main routes ('/cashier' and '/storage'). Include a simple, clean sidebar or top nav to switch between them.",
+    "2. State Management: Use a robust state for the cart and inventory. Items added to the cart must deduct from visible stock, and checkout must permanently reduce inventory stock.",
+    "3. Barcode Scanning: Implement 'html5-qrcode' or 'react-barcode-scanner' for webcam capability on both pages. For USB barcode scanners, standard text inputs should handle fast typing and auto-submit on 'Enter'.",
+    "4. Currency Formatting: All monetary values must be formatted in IQD (Iraqi Dinar) using Intl.NumberFormat('en-IQ', { style: 'currency', currency: 'IQD' }) or similar, displaying clearly without decimal fractions if not needed.",
+    "5. Form Fields for Storage: Name, Barcode (optional string), Buying Price (number), Selling Price (number), Supplier Name (string), Type (string - free text), Stock Quantity (number).",
+    "6. Motion: Use framer-motion for layout shifts in the cart (AnimatePresence when items are removed/added) and for modal dialogs when adding a new item in storage.",
+    "7. Mock Data: Pre-populate the storage with 10-15 realistic pharmacy items (e.g., Paracetamol, Amoxicillin, Vitamin C, Bandages) to demonstrate functionality immediately."
+  ],
+  "image_urls": {
+    "empty_states": [
+      {
+        "url": "https://images.unsplash.com/photo-1705988142466-e468bc654eeb?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDF8MHwxfHNlYXJjaHwxfHxwaGFybWFjeSUyMG1lZGljYWwlMjBwaWxscyUyMGxvZ28lMjBtaW5pbWFsfGVufDB8fHx8MTc3OTEyNDk4Mnww&ixlib=rb-4.1.0&q=85",
+        "description": "Abstract pills image for empty state backgrounds or login if needed (optional)",
+        "category": "background"
+      }
+    ]
+  }
+}
