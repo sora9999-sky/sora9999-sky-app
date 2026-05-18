@@ -1,0 +1,90 @@
+name: Build Windows .exe
+
+on:
+  # Run manually from the Actions tab
+  workflow_dispatch:
+  # Run automatically when you push a tag like v1.0.0, v1.0.1, etc.
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-windows:
+    name: Build Avicenna Pharmacy Desktop
+    runs-on: windows-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install yarn (global)
+        run: npm install -g yarn
+        shell: cmd
+
+      # ---------- Build React frontend with relative asset paths ----------
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: yarn install --frozen-lockfile || yarn install
+        shell: cmd
+
+      - name: Build frontend (offline mode)
+        working-directory: frontend
+        env:
+          PUBLIC_URL: './'
+          CI: 'false'   # don't treat warnings as errors
+        run: yarn build
+        shell: cmd
+
+      # ---------- Stage build inside desktop/app ----------
+      - name: Copy frontend build into desktop\app
+        run: |
+          if exist desktop\app rmdir /s /q desktop\app
+          xcopy /e /i /y frontend\build desktop\app
+        shell: cmd
+
+      # ---------- Install Electron tooling ----------
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm install
+        shell: cmd
+
+      # ---------- Build the Windows installer + portable .exe ----------
+      - name: Build Windows installer (NSIS) and portable .exe
+        working-directory: desktop
+        run: npm run build:all
+        shell: cmd
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ---------- Upload artifacts so you can download them ----------
+      - name: Upload installer .exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: Avicenna-Pharmacy-Installer
+          path: desktop/dist/*Setup*.exe
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload portable .exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: Avicenna-Pharmacy-Portable
+          path: desktop/dist/*.exe
+          if-no-files-found: warn
+          retention-days: 30
+
+      # ---------- (Optional) attach .exe to a GitHub Release when tagged ----------
+      - name: Publish GitHub Release on tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: desktop/dist/*.exe
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
