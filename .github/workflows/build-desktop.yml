@@ -1,18 +1,19 @@
 name: Build Windows .exe
 
 on:
-  # Run manually from the Actions tab
   workflow_dispatch:
-  # Run automatically when you push a tag like v1.0.0, v1.0.1, etc.
   push:
-    tags:
-      - 'v*'
+    branches: [main, master]
+    tags: ['v*']
+
+permissions:
+  contents: write
 
 jobs:
-  build-windows:
+  build:
     name: Build Avicenna Pharmacy Desktop
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
 
     steps:
       - name: Check out repository
@@ -30,66 +31,87 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install yarn (global)
-        run: npm install -g yarn
-        shell: cmd
+      - name: Show repo layout (debug)
+        shell: pwsh
+        run: |
+          Write-Host "Working dir: $PWD"
+          Get-ChildItem -Force
+          Write-Host "--- frontend ---"
+          if (Test-Path frontend) { Get-ChildItem frontend -Force }
+          Write-Host "--- desktop ---"
+          if (Test-Path desktop) { Get-ChildItem desktop -Force }
 
-      # ---------- Build React frontend with relative asset paths ----------
+      - name: Install Yarn
+        shell: pwsh
+        run: npm install --global yarn
+
+      # ---------- 1. Build the React frontend ----------
       - name: Install frontend dependencies
         working-directory: frontend
-        run: yarn install --frozen-lockfile || yarn install
-        shell: cmd
+        shell: pwsh
+        run: yarn install --network-timeout 600000
 
-      - name: Build frontend (offline mode)
+      - name: Build frontend (relative paths for file://)
         working-directory: frontend
+        shell: pwsh
         env:
           PUBLIC_URL: './'
-          CI: 'false'   # don't treat warnings as errors
+          CI: 'false'
         run: yarn build
-        shell: cmd
 
-      # ---------- Stage build inside desktop/app ----------
+      # ---------- 2. Stage build inside desktop\app ----------
       - name: Copy frontend build into desktop\app
+        shell: pwsh
         run: |
-          if exist desktop\app rmdir /s /q desktop\app
-          xcopy /e /i /y frontend\build desktop\app
-        shell: cmd
+          $dest = "desktop/app"
+          if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
+          New-Item -ItemType Directory -Path $dest | Out-Null
+          Copy-Item frontend/build/* $dest -Recurse -Force
+          Write-Host "Staged files:"
+          Get-ChildItem $dest
 
-      # ---------- Install Electron tooling ----------
+      # ---------- 3. Install Electron tooling ----------
       - name: Install desktop dependencies
         working-directory: desktop
-        run: npm install
-        shell: cmd
+        shell: pwsh
+        run: npm install --no-audit --no-fund
 
-      # ---------- Build the Windows installer + portable .exe ----------
-      - name: Build Windows installer (NSIS) and portable .exe
+      # ---------- 4. Build the installer + portable ----------
+      - name: Build Windows installer + portable .exe
         working-directory: desktop
-        run: npm run build:all
-        shell: cmd
+        shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ""
           CSC_KEY_PASSWORD: ""
           ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES: true
+          # Disable code signing (we have no certificate)
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm run build:all
 
-      # ---------- Upload artifacts so you can download them ----------
-      - name: Upload installer .exe
+      - name: List build outputs (debug)
+        shell: pwsh
+        run: |
+          if (Test-Path desktop/dist) {
+            Get-ChildItem desktop/dist -Recurse | Select-Object FullName, Length
+          } else {
+            Write-Error "desktop/dist does not exist — build did not produce output"
+            exit 1
+          }
+
+      # ---------- 5. Upload the .exe so you can download it ----------
+      - name: Upload .exe artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Avicenna-Pharmacy-Installer
-          path: desktop/dist/*Setup*.exe
-          if-no-files-found: warn
+          name: Avicenna-Pharmacy-Windows
+          path: |
+            desktop/dist/*.exe
+            desktop/dist/*.blockmap
+            desktop/dist/latest.yml
+          if-no-files-found: error
           retention-days: 30
 
-      - name: Upload portable .exe
-        uses: actions/upload-artifact@v4
-        with:
-          name: Avicenna-Pharmacy-Portable
-          path: desktop/dist/*.exe
-          if-no-files-found: warn
-          retention-days: 30
-
-      # ---------- (Optional) attach .exe to a GitHub Release when tagged ----------
+      # ---------- 6. (Optional) attach .exe to a Release on tag pushes ----------
       - name: Publish GitHub Release on tag
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
