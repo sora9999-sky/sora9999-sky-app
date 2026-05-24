@@ -25,6 +25,13 @@ function wireIpc() {
     ipcMain.handle('items:delete', safe((id) => db.deleteItem(id)));
     ipcMain.handle('sales:checkout', safe((payload) => db.checkout(payload)));
     ipcMain.handle('sales:list', safe(() => db.listSales()));
+    ipcMain.handle('sales:clearAll', safe(() => db.clearAllSales()));
+    ipcMain.handle('notifications:list', safe(() => db.listNotifications()));
+    ipcMain.handle(
+        'notifications:dismiss',
+        safe((item_id, type) => db.dismissNotification(item_id, type))
+    );
+    ipcMain.handle('notifications:clearAll', safe(() => db.clearAllNotifications()));
     ipcMain.handle('app:dbPath', safe(() => db.getDbPath()));
 
     ipcMain.handle(

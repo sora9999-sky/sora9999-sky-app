@@ -292,6 +292,139 @@ async def list_sales():
     return [_clean(d) for d in docs]
 
 
+# -------------------- Sales clear --------------------
+@api_router.delete("/sales")
+async def clear_sales():
+    await db.sales.delete_many({})
+    return {"ok": True}
+
+
+# -------------------- Notifications --------------------
+LOW_STOCK_THRESHOLD = 2
+EXPIRY_WARN_DAYS = 90
+RENOTIFY_DAYS = 15
+
+
+class NotificationDismiss(BaseModel):
+    item_id: str
+    type: str
+
+
+def _compute_notifications(items):
+    out = []
+    now = datetime.now(timezone.utc)
+    for it in items:
+        sheets_per_pack = int(it.get("sheets_per_pack") or 0)
+        loose = int(it.get("loose_sheets") or 0)
+        stock_qty = int(it.get("stock_qty") or 0)
+        total_sheets = stock_qty * sheets_per_pack + loose
+        is_out = (total_sheets == 0) if sheets_per_pack else (stock_qty == 0)
+        is_low = not is_out and stock_qty <= LOW_STOCK_THRESHOLD
+
+        if is_out:
+            out.append({
+                "id": f"{it['id']}__out_of_stock",
+                "item_id": it["id"],
+                "item_name": it["name"],
+                "type": "out_of_stock",
+                "level": "critical",
+                "message": f"{it['name']} is out of stock",
+            })
+        elif is_low:
+            out.append({
+                "id": f"{it['id']}__low_stock",
+                "item_id": it["id"],
+                "item_name": it["name"],
+                "type": "low_stock",
+                "level": "warning",
+                "message": f"{it['name']} — only {stock_qty} pack{'' if stock_qty == 1 else 's'} left",
+            })
+
+        exp_str = it.get("expiry_date")
+        if exp_str:
+            try:
+                exp = datetime.fromisoformat(exp_str).replace(tzinfo=timezone.utc)
+                days = (exp - now).days
+                if days < 0:
+                    out.append({
+                        "id": f"{it['id']}__expired",
+                        "item_id": it["id"],
+                        "item_name": it["name"],
+                        "type": "expired",
+                        "level": "critical",
+                        "message": f"{it['name']} expired on {exp_str}",
+                        "expiry_date": exp_str,
+                    })
+                elif days <= EXPIRY_WARN_DAYS:
+                    out.append({
+                        "id": f"{it['id']}__expiring_soon",
+                        "item_id": it["id"],
+                        "item_name": it["name"],
+                        "type": "expiring_soon",
+                        "level": "warning",
+                        "message": f"{it['name']} expires in {days} day{'' if days == 1 else 's'} ({exp_str})",
+                        "expiry_date": exp_str,
+                    })
+            except Exception:
+                pass
+    return out
+
+
+@api_router.get("/notifications")
+async def list_notifications():
+    items = await db.items.find({}, {"_id": 0}).to_list(2000)
+    candidates = _compute_notifications(items)
+    dismissed = await db.notifications_dismissed.find({}, {"_id": 0}).to_list(5000)
+    now_ts = datetime.now(timezone.utc).timestamp()
+    cutoff = RENOTIFY_DAYS * 86400
+    by_key = {(d["item_id"], d["type"]): d for d in dismissed}
+
+    active = []
+    for n in candidates:
+        d = by_key.get((n["item_id"], n["type"]))
+        if d:
+            try:
+                ts = datetime.fromisoformat(d["dismissed_at"]).timestamp()
+                if now_ts - ts < cutoff:
+                    continue
+            except Exception:
+                pass
+        active.append(n)
+    return active
+
+
+@api_router.post("/notifications/dismiss")
+async def dismiss_notification(payload: NotificationDismiss):
+    await db.notifications_dismissed.update_one(
+        {"item_id": payload.item_id, "type": payload.type},
+        {"$set": {
+            "item_id": payload.item_id,
+            "type": payload.type,
+            "dismissed_at": datetime.now(timezone.utc).isoformat(),
+        }},
+        upsert=True,
+    )
+    return {"ok": True}
+
+
+@api_router.post("/notifications/clear-all")
+async def clear_all_notifications():
+    items = await db.items.find({}, {"_id": 0}).to_list(2000)
+    candidates = _compute_notifications(items)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    for n in candidates:
+        await db.notifications_dismissed.update_one(
+            {"item_id": n["item_id"], "type": n["type"]},
+            {"$set": {
+                "item_id": n["item_id"],
+                "type": n["type"],
+                "dismissed_at": now_iso,
+            }},
+            upsert=True,
+        )
+    return {"ok": True, "cleared": len(candidates)}
+
+
 # -------------------- Seed --------------------
 SEED_ITEMS = [
     {"name": "Paracetamol 500mg", "barcode": "6291100100015", "buying_price": 750, "selling_price": 1250, "supplier": "Pioneer Pharma", "type": "Tablet", "stock_qty": 120},

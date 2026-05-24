@@ -1,23 +1,70 @@
-import { NavLink, Outlet } from "react-router-dom";
-import { useState } from "react";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { ShoppingCart, Boxes, Download, Upload } from "lucide-react";
+import { ShoppingCart, Boxes, Bell, Receipt, Users, Download, Upload, Lock } from "lucide-react";
 import RoseIcon from "@/components/RoseIcon";
+import PasswordDialog from "@/components/PasswordDialog";
 import {
     AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
     AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { IS_DESKTOP } from "@/lib/api";
+import { api, IS_DESKTOP } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
+
+const NAV = [
+    { to: "/cashier", label: "POS", Icon: ShoppingCart, public: true },
+    { to: "/storage", label: "Storage", Icon: Boxes },
+    { to: "/notifications", label: "Alerts", Icon: Bell, showBadge: true },
+    { to: "/sales", label: "Sales", Icon: Receipt },
+    { to: "/suppliers", label: "Suppliers", Icon: Users },
+];
 
 const Layout = () => {
-    const linkBase =
-        "flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors btn-soft";
-    const activeCls =
-        "bg-emerald-500 text-white shadow-[0_8px_20px_rgba(16,185,129,0.35)]";
-    const idleCls = "text-stone-700 hover:bg-stone-100";
+    const navigate = useNavigate();
+    const location = useLocation();
+    const { unlocked, unlock } = useAuth();
 
+    const [pwOpen, setPwOpen] = useState(false);
+    const [pendingRoute, setPendingRoute] = useState(null);
     const [confirmRestore, setConfirmRestore] = useState(false);
     const [busy, setBusy] = useState(false);
+    const [notifCount, setNotifCount] = useState(0);
+
+    // Periodically refresh notification count
+    useEffect(() => {
+        let mounted = true;
+        const fetchCount = async () => {
+            try {
+                const res = await api.get("/notifications");
+                if (mounted) setNotifCount(res.data.length);
+            } catch (e) {
+                // ignore
+            }
+        };
+        fetchCount();
+        const id = setInterval(fetchCount, 30000);
+        return () => {
+            mounted = false;
+            clearInterval(id);
+        };
+    }, [location.pathname]);
+
+    const goTo = (to, isPublic) => {
+        if (isPublic || unlocked) {
+            navigate(to);
+        } else {
+            setPendingRoute(to);
+            setPwOpen(true);
+        }
+    };
+
+    const onUnlock = () => {
+        unlock();
+        setPwOpen(false);
+        if (pendingRoute) navigate(pendingRoute);
+        setPendingRoute(null);
+        toast.success("Unlocked");
+    };
 
     const doBackup = async () => {
         if (!window.pharmacyAPI) return;
@@ -42,7 +89,6 @@ const Layout = () => {
             toast.success("Backup restored", {
                 description: `${res.items} items, ${res.sales} sales loaded. Reloading…`,
             });
-            // Reload so all pages re-fetch from the new data
             setTimeout(() => window.location.reload(), 800);
         } catch (e) {
             toast.error("Restore failed", { description: e?.message });
@@ -54,7 +100,7 @@ const Layout = () => {
     return (
         <div className="min-h-screen flex flex-col">
             <header className="sticky top-0 z-30 backdrop-blur bg-white/80 border-b border-stone-100">
-                <div className="max-w-[1400px] mx-auto px-6 py-4 flex items-center justify-between">
+                <div className="max-w-[1400px] mx-auto px-6 py-4 flex items-center justify-between gap-4">
                     <div className="flex items-center gap-3" data-testid="brand-logo">
                         <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-rose-400 to-rose-600 flex items-center justify-center shadow-[0_8px_20px_rgba(244,63,94,0.3)]">
                             <RoseIcon className="w-6 h-6 text-white" strokeWidth={1.8} />
@@ -63,32 +109,44 @@ const Layout = () => {
                             <div className="font-display font-bold text-lg leading-none text-stone-900">
                                 Jory Corner
                             </div>
-                            <div className="text-xs text-stone-500 mt-0.5">
-                                Pharmacy
-                            </div>
+                            <div className="text-xs text-stone-500 mt-0.5">Pharmacy</div>
                         </div>
                     </div>
-                    <nav className="flex items-center gap-2">
-                        <NavLink
-                            to="/cashier"
-                            data-testid="nav-cashier"
-                            className={({ isActive }) =>
-                                `${linkBase} ${isActive ? activeCls : idleCls}`
-                            }
-                        >
-                            <ShoppingCart className="w-4 h-4" />
-                            Cashier
-                        </NavLink>
-                        <NavLink
-                            to="/storage"
-                            data-testid="nav-storage"
-                            className={({ isActive }) =>
-                                `${linkBase} ${isActive ? activeCls : idleCls}`
-                            }
-                        >
-                            <Boxes className="w-4 h-4" />
-                            Storage
-                        </NavLink>
+
+                    <nav className="flex items-center gap-1 flex-wrap">
+                        {NAV.map(({ to, label, Icon, public: isPublic, showBadge }) => {
+                            const isActive = location.pathname === to;
+                            const locked = !isPublic && !unlocked;
+                            return (
+                                <button
+                                    key={to}
+                                    type="button"
+                                    onClick={() => goTo(to, isPublic)}
+                                    data-testid={`nav-${label.toLowerCase()}`}
+                                    className={`relative flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-colors btn-soft ${
+                                        isActive
+                                            ? "bg-emerald-500 text-white shadow-[0_8px_20px_rgba(16,185,129,0.35)]"
+                                            : "text-stone-700 hover:bg-stone-100"
+                                    }`}
+                                >
+                                    <Icon className="w-4 h-4" />
+                                    {label}
+                                    {locked && <Lock className="w-3 h-3 opacity-60" />}
+                                    {showBadge && notifCount > 0 && (
+                                        <span
+                                            data-testid="nav-notif-badge"
+                                            className={`min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center ${
+                                                isActive
+                                                    ? "bg-white text-emerald-700"
+                                                    : "bg-rose-500 text-white"
+                                            }`}
+                                        >
+                                            {notifCount > 99 ? "99+" : notifCount}
+                                        </span>
+                                    )}
+                                </button>
+                            );
+                        })}
 
                         {IS_DESKTOP && (
                             <>
@@ -98,8 +156,8 @@ const Layout = () => {
                                     onClick={doBackup}
                                     disabled={busy}
                                     data-testid="backup-button"
-                                    title="Save a backup of all data to a file"
-                                    className={`${linkBase} ${idleCls} disabled:opacity-50`}
+                                    title="Save a backup of all data"
+                                    className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-colors btn-soft text-stone-700 hover:bg-stone-100 disabled:opacity-50"
                                 >
                                     <Download className="w-4 h-4" />
                                     Backup
@@ -109,8 +167,8 @@ const Layout = () => {
                                     onClick={() => setConfirmRestore(true)}
                                     disabled={busy}
                                     data-testid="restore-button"
-                                    title="Restore data from a backup file"
-                                    className={`${linkBase} ${idleCls} disabled:opacity-50`}
+                                    title="Restore data from backup"
+                                    className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-colors btn-soft text-stone-700 hover:bg-stone-100 disabled:opacity-50"
                                 >
                                     <Upload className="w-4 h-4" />
                                     Restore
@@ -129,13 +187,23 @@ const Layout = () => {
                 Jory Corner Pharmacy · prices in IQD{IS_DESKTOP ? " · Offline edition" : ""}
             </footer>
 
+            <PasswordDialog
+                open={pwOpen}
+                onClose={() => {
+                    setPwOpen(false);
+                    setPendingRoute(null);
+                }}
+                onSuccess={onUnlock}
+            />
+
             <AlertDialog open={confirmRestore} onOpenChange={setConfirmRestore}>
                 <AlertDialogContent className="rounded-2xl" data-testid="restore-confirm-dialog">
                     <AlertDialogHeader>
                         <AlertDialogTitle>Restore from backup?</AlertDialogTitle>
                         <AlertDialogDescription>
-                            This will <strong>replace all current data</strong> (items and sales)
-                            with the contents of the backup file you select. This cannot be undone.
+                            This will <strong>replace all current data</strong> (items and
+                            sales) with the contents of the backup file you select. This
+                            cannot be undone.
                             <br />
                             <br />
                             Tip: take a fresh backup first if you're not sure.

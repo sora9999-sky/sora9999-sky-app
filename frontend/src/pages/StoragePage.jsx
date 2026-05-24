@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Plus, Search, Pencil, Trash2, Package, Barcode, Layers, CalendarClock, Receipt } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -54,6 +55,9 @@ const StoragePage = () => {
     const [editingId, setEditingId] = useState(null);
     const [confirmDelete, setConfirmDelete] = useState(null);
     const [saving, setSaving] = useState(false);
+    const [highlightId, setHighlightId] = useState(null);
+    const [searchParams, setSearchParams] = useSearchParams();
+    const rowRefs = useRef({});
 
     const load = async () => {
         try {
@@ -66,6 +70,25 @@ const StoragePage = () => {
     useEffect(() => {
         load();
     }, []);
+
+    // If the URL has ?highlight=<id>, scroll the row into view and flash it.
+    useEffect(() => {
+        const targetId = searchParams.get("highlight");
+        if (!targetId || items.length === 0) return;
+        const row = rowRefs.current[targetId];
+        if (row) {
+            row.scrollIntoView({ behavior: "smooth", block: "center" });
+            setHighlightId(targetId);
+            const t = setTimeout(() => setHighlightId(null), 2400);
+            const t2 = setTimeout(() => {
+                setSearchParams({}, { replace: true });
+            }, 2500);
+            return () => {
+                clearTimeout(t);
+                clearTimeout(t2);
+            };
+        }
+    }, [searchParams, items, setSearchParams]);
 
     const filtered = useMemo(() => {
         const q = search.trim().toLowerCase();
@@ -279,8 +302,15 @@ const StoragePage = () => {
                             {filtered.map((it) => (
                                 <tr
                                     key={it.id}
+                                    ref={(el) => {
+                                        if (el) rowRefs.current[it.id] = el;
+                                    }}
                                     data-testid={`storage-row-${it.id}`}
-                                    className="hover:bg-stone-50/60"
+                                    className={`hover:bg-stone-50/60 transition-colors ${
+                                        highlightId === it.id
+                                            ? "bg-emerald-50 ring-2 ring-emerald-400/60"
+                                            : ""
+                                    }`}
                                 >
                                     <td className="py-3 px-2">
                                         <div className="font-semibold text-stone-900 flex items-center gap-2">

@@ -6,7 +6,11 @@ const path = require('path');
 const crypto = require('crypto');
 
 let DB_PATH = null;
-let data = { items: [], sales: [] };
+let data = { items: [], sales: [], dismissed_notifications: [] };
+
+const LOW_STOCK_THRESHOLD = 2;
+const EXPIRY_WARN_DAYS = 90;
+const RENOTIFY_DAYS = 15;
 
 const SEED_ITEMS = [
     { name: 'Paracetamol 500mg', barcode: '6291100100015', buying_price: 750, selling_price: 1250, supplier: 'Pioneer Pharma', type: 'Tablet', stock_qty: 120 },
@@ -59,10 +63,12 @@ function init(userDataPath) {
             data = JSON.parse(raw);
             if (!Array.isArray(data.items)) data.items = [];
             if (!Array.isArray(data.sales)) data.sales = [];
+            if (!Array.isArray(data.dismissed_notifications))
+                data.dismissed_notifications = [];
         }
     } catch (e) {
         console.error('Failed to load pharmacy.json, starting fresh:', e);
-        data = { items: [], sales: [] };
+        data = { items: [], sales: [], dismissed_notifications: [] };
     }
 
     if (data.items.length === 0) {
@@ -324,6 +330,106 @@ function listSales() {
     return data.sales;
 }
 
+function clearAllSales() {
+    data.sales = [];
+    persist();
+    return { ok: true };
+}
+
+// ---- Notifications ----
+function computeNotifications() {
+    const now = new Date();
+    const out = [];
+    for (const it of data.items) {
+        const sheetsPerPack = it.sheets_per_pack || 0;
+        const totalSheets = (it.stock_qty || 0) * sheetsPerPack + (it.loose_sheets || 0);
+        const isOutOfStock = sheetsPerPack > 0 ? totalSheets === 0 : (it.stock_qty || 0) === 0;
+        const isLowStock =
+            !isOutOfStock && (it.stock_qty || 0) <= LOW_STOCK_THRESHOLD;
+
+        if (isOutOfStock) {
+            out.push({
+                id: `${it.id}__out_of_stock`,
+                item_id: it.id,
+                item_name: it.name,
+                type: 'out_of_stock',
+                level: 'critical',
+                message: `${it.name} is out of stock`,
+            });
+        } else if (isLowStock) {
+            out.push({
+                id: `${it.id}__low_stock`,
+                item_id: it.id,
+                item_name: it.name,
+                type: 'low_stock',
+                level: 'warning',
+                message: `${it.name} — only ${it.stock_qty} pack${it.stock_qty === 1 ? '' : 's'} left`,
+            });
+        }
+
+        if (it.expiry_date) {
+            const exp = new Date(it.expiry_date);
+            if (!Number.isNaN(exp.getTime())) {
+                const days = Math.floor((exp - now) / 86400000);
+                if (days < 0) {
+                    out.push({
+                        id: `${it.id}__expired`,
+                        item_id: it.id,
+                        item_name: it.name,
+                        type: 'expired',
+                        level: 'critical',
+                        message: `${it.name} expired on ${it.expiry_date}`,
+                        expiry_date: it.expiry_date,
+                    });
+                } else if (days <= EXPIRY_WARN_DAYS) {
+                    out.push({
+                        id: `${it.id}__expiring_soon`,
+                        item_id: it.id,
+                        item_name: it.name,
+                        type: 'expiring_soon',
+                        level: 'warning',
+                        message: `${it.name} expires in ${days} day${days === 1 ? '' : 's'} (${it.expiry_date})`,
+                        expiry_date: it.expiry_date,
+                    });
+                }
+            }
+        }
+    }
+    return out;
+}
+
+function listNotifications() {
+    const all = computeNotifications();
+    const now = Date.now();
+    const cutoff = RENOTIFY_DAYS * 86400000;
+    return all.filter((n) => {
+        const d = data.dismissed_notifications.find(
+            (x) => x.item_id === n.item_id && x.type === n.type
+        );
+        if (!d) return true;
+        return now - new Date(d.dismissed_at).getTime() >= cutoff;
+    });
+}
+
+function dismissNotification(item_id, type) {
+    const idx = data.dismissed_notifications.findIndex(
+        (x) => x.item_id === item_id && x.type === type
+    );
+    const stamp = { item_id, type, dismissed_at: nowIso() };
+    if (idx >= 0) data.dismissed_notifications[idx] = stamp;
+    else data.dismissed_notifications.push(stamp);
+    persist();
+    return { ok: true };
+}
+
+function clearAllNotifications() {
+    const active = listNotifications();
+    for (const n of active) {
+        dismissNotification(n.item_id, n.type);
+    }
+    return { ok: true, cleared: active.length };
+}
+
 function getDbPath() {
     return DB_PATH;
 }
@@ -367,7 +473,11 @@ module.exports = {
     deleteItem,
     checkout,
     listSales,
+    clearAllSales,
     getDbPath,
     exportAll,
     importAll,
+    listNotifications,
+    dismissNotification,
+    clearAllNotifications,
 };

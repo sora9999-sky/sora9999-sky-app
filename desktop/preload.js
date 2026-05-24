@@ -21,6 +21,11 @@ contextBridge.exposeInMainWorld('pharmacyAPI', {
     deleteItem: (id) => call('items:delete', id),
     checkout: (payload) => call('sales:checkout', payload),
     listSales: () => call('sales:list'),
+    clearAllSales: () => call('sales:clearAll'),
+    listNotifications: () => call('notifications:list'),
+    dismissNotification: (item_id, type) =>
+        call('notifications:dismiss', item_id, type),
+    clearAllNotifications: () => call('notifications:clearAll'),
     dbPath: () => call('app:dbPath'),
     backupSave: () => call('backup:save'),
     backupRestore: () => call('backup:restore'),

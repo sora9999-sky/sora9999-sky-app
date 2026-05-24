@@ -46,6 +46,18 @@ const electronRoute = async (method, url, body) => {
         if (method === "GET" && url === "/sales") {
             return { data: await api.listSales() };
         }
+        if (method === "DELETE" && url === "/sales") {
+            return { data: await api.clearAllSales() };
+        }
+        if (method === "GET" && url === "/notifications") {
+            return { data: await api.listNotifications() };
+        }
+        if (method === "POST" && url === "/notifications/dismiss") {
+            return { data: await api.dismissNotification(body.item_id, body.type) };
+        }
+        if (method === "POST" && url === "/notifications/clear-all") {
+            return { data: await api.clearAllNotifications() };
+        }
         throw new Error(`Unhandled route ${method} ${url}`);
     } catch (e) {
         throw electronError(e);
