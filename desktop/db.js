@@ -435,13 +435,16 @@ function getDbPath() {
 }
 
 function exportAll() {
-    return {
-        version: 1,
-        app: 'Jory Corner Pharmacy',
-        exported_at: nowIso(),
-        items: data.items,
-        sales: data.sales,
-    };
+    // Deep-clone so callers can't mutate internal state through the returned reference.
+    return JSON.parse(
+        JSON.stringify({
+            version: 1,
+            app: 'Jory Corner Pharmacy',
+            exported_at: nowIso(),
+            items: data.items,
+            sales: data.sales,
+        })
+    );
 }
 
 function importAll(payload) {
