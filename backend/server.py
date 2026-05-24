@@ -31,6 +31,9 @@ class ItemBase(BaseModel):
     supplier: str
     type: str
     stock_qty: int = 0
+    sheets_per_pack: Optional[int] = None
+    sheet_selling_price: Optional[float] = None
+    loose_sheets: int = 0
 
 
 class ItemCreate(ItemBase):
@@ -45,6 +48,9 @@ class ItemUpdate(BaseModel):
     supplier: Optional[str] = None
     type: Optional[str] = None
     stock_qty: Optional[int] = None
+    sheets_per_pack: Optional[int] = None
+    sheet_selling_price: Optional[float] = None
+    loose_sheets: Optional[int] = None
 
 
 class Item(ItemBase):
@@ -59,21 +65,26 @@ class SaleLine(BaseModel):
     qty: int
     unit_price: float
     subtotal: float
+    mode: str = "pack"
 
 
 class CheckoutItem(BaseModel):
     item_id: str
     qty: int
+    mode: str = "pack"
 
 
 class CheckoutRequest(BaseModel):
     items: List[CheckoutItem]
+    discount: float = 0
 
 
 class Sale(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     lines: List[SaleLine]
+    subtotal: float = 0
+    discount: float = 0
     total: float
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -174,22 +185,56 @@ async def checkout(payload: CheckoutRequest):
     if not payload.items:
         raise HTTPException(status_code=400, detail="No items in cart")
 
-    lines: List[SaleLine] = []
-    total = 0.0
-
-    # Validate stock
+    # Group by item id to validate combined availability
+    grouped: dict = {}
     for ci in payload.items:
-        doc = await db.items.find_one({"id": ci.item_id}, {"_id": 0})
-        if not doc:
-            raise HTTPException(status_code=404, detail=f"Item {ci.item_id} not found")
         if ci.qty <= 0:
-            raise HTTPException(status_code=400, detail=f"Invalid qty for {doc['name']}")
-        if doc.get("stock_qty", 0) < ci.qty:
+            raise HTTPException(status_code=400, detail="Invalid quantity")
+        bucket = grouped.setdefault(ci.item_id, {"packs": 0, "sheets": 0})
+        mode = "sheet" if ci.mode == "sheet" else "pack"
+        bucket["sheets" if mode == "sheet" else "packs"] += ci.qty
+
+    items_by_id: dict = {}
+    for item_id, totals in grouped.items():
+        doc = await db.items.find_one({"id": item_id}, {"_id": 0})
+        if not doc:
+            raise HTTPException(status_code=404, detail=f"Item {item_id} not found")
+        items_by_id[item_id] = doc
+
+        packs = totals["packs"]
+        sheets = totals["sheets"]
+        sheets_per_pack = int(doc.get("sheets_per_pack") or 0)
+        loose_sheets = int(doc.get("loose_sheets") or 0)
+        stock_qty = int(doc.get("stock_qty") or 0)
+
+        if packs > stock_qty:
             raise HTTPException(
                 status_code=400,
-                detail=f"Insufficient stock for {doc['name']} (have {doc.get('stock_qty', 0)})",
+                detail=f"Insufficient packs for {doc['name']} (have {stock_qty})",
             )
-        unit_price = float(doc["selling_price"])
+        if sheets > 0:
+            if not sheets_per_pack:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{doc['name']} cannot be sold by the sheet",
+                )
+            sheets_available = (stock_qty - packs) * sheets_per_pack + loose_sheets
+            if sheets > sheets_available:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Insufficient sheets for {doc['name']} (have {sheets_available})",
+                )
+
+    # Build lines
+    lines: List[SaleLine] = []
+    total = 0.0
+    for ci in payload.items:
+        doc = items_by_id[ci.item_id]
+        mode = "sheet" if ci.mode == "sheet" else "pack"
+        if mode == "sheet":
+            unit_price = float(doc.get("sheet_selling_price") or 0)
+        else:
+            unit_price = float(doc["selling_price"])
         subtotal = unit_price * ci.qty
         total += subtotal
         lines.append(
@@ -199,16 +244,38 @@ async def checkout(payload: CheckoutRequest):
                 qty=ci.qty,
                 unit_price=unit_price,
                 subtotal=subtotal,
+                mode=mode,
             )
         )
 
-    # Apply stock decrement
-    for ci in payload.items:
+    # Apply stock changes (packs first, then sheets which may open packs)
+    for item_id, totals in grouped.items():
+        doc = items_by_id[item_id]
+        packs = totals["packs"]
+        sheets = totals["sheets"]
+        sheets_per_pack = int(doc.get("sheets_per_pack") or 0)
+        loose_sheets = int(doc.get("loose_sheets") or 0)
+        stock_qty = int(doc.get("stock_qty") or 0)
+
+        stock_qty -= packs
+        remaining = sheets
+        while remaining > 0:
+            if loose_sheets > 0:
+                take = min(loose_sheets, remaining)
+                loose_sheets -= take
+                remaining -= take
+            elif stock_qty > 0:
+                stock_qty -= 1
+                loose_sheets = sheets_per_pack
+            else:
+                raise HTTPException(status_code=400, detail="Stock inconsistency")
+
         await db.items.update_one(
-            {"id": ci.item_id}, {"$inc": {"stock_qty": -ci.qty}}
+            {"id": item_id},
+            {"$set": {"stock_qty": stock_qty, "loose_sheets": loose_sheets}},
         )
 
-    sale = Sale(lines=lines, total=total)
+    sale = Sale(lines=lines, subtotal=total, discount=payload.discount, total=total - payload.discount)
     sale_doc = sale.model_dump()
     sale_doc["created_at"] = sale_doc["created_at"].isoformat()
     await db.sales.insert_one(sale_doc)

@@ -67,3 +67,52 @@ export const formatIQD = (amount) => {
     const n = Math.round(Number(amount) || 0);
     return `${n.toLocaleString("en-US")} IQD`;
 };
+
+// Visual summary of an item's stock, honouring pack + sheet breakdown.
+export const stockSummary = (item) => {
+    const sheetsPerPack = item.sheets_per_pack || 0;
+    const packs = item.stock_qty || 0;
+    const loose = item.loose_sheets || 0;
+    if (sheetsPerPack > 0) {
+        if (packs === 0 && loose === 0) return { label: "Out of stock", level: "out" };
+        const parts = [];
+        if (packs > 0) parts.push(`${packs} pack${packs !== 1 ? "s" : ""}`);
+        if (loose > 0) parts.push(`${loose} sheet${loose !== 1 ? "s" : ""}`);
+        const totalSheets = packs * sheetsPerPack + loose;
+        const level =
+            totalSheets <= sheetsPerPack ? "low" : packs <= 2 ? "low" : "ok";
+        return { label: parts.join(" + "), level };
+    }
+    if (packs <= 0) return { label: "Out of stock", level: "out" };
+    if (packs <= 10) return { label: `${packs} left`, level: "low" };
+    return { label: `${packs} left`, level: "ok" };
+};
+
+// True if a single unit of `mode` can still be added given current cart.
+export const canAddOne = (item, mode, cart) => {
+    if (!item) return false;
+    const packsInCart = cart
+        .filter((c) => c.id === item.id && c.mode === "pack")
+        .reduce((s, c) => s + c.qty, 0);
+    const sheetsInCart = cart
+        .filter((c) => c.id === item.id && c.mode === "sheet")
+        .reduce((s, c) => s + c.qty, 0);
+    const sheetsPerPack = item.sheets_per_pack || 0;
+    const looseSheets = item.loose_sheets || 0;
+
+    if (mode === "pack") {
+        const proposedPacks = packsInCart + 1;
+        if (proposedPacks > item.stock_qty) return false;
+        if (sheetsPerPack > 0) {
+            const remainingSheets =
+                (item.stock_qty - proposedPacks) * sheetsPerPack + looseSheets;
+            if (sheetsInCart > remainingSheets) return false;
+        }
+        return true;
+    }
+    // sheet
+    if (!sheetsPerPack) return false;
+    const remainingSheets =
+        (item.stock_qty - packsInCart) * sheetsPerPack + looseSheets;
+    return sheetsInCart + 1 <= remainingSheets;
+};

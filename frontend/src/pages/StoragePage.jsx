@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Plus, Search, Pencil, Trash2, Package, Barcode } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, Package, Barcode, Layers } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,8 +11,7 @@ import {
     AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
     AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import BarcodeScanner from "@/components/BarcodeScanner";
-import { api, formatIQD } from "@/lib/api";
+import { api, formatIQD, stockSummary } from "@/lib/api";
 
 const emptyForm = {
     name: "",
@@ -22,6 +21,9 @@ const emptyForm = {
     supplier: "",
     type: "",
     stock_qty: "",
+    sheets_per_pack: "",
+    sheet_selling_price: "",
+    loose_sheets: "",
 };
 
 const StoragePage = () => {
@@ -68,22 +70,32 @@ const StoragePage = () => {
         setForm({
             name: it.name,
             barcode: it.barcode || "",
-            buying_price: String(it.buying_price),
-            selling_price: String(it.selling_price),
-            supplier: it.supplier,
-            type: it.type,
-            stock_qty: String(it.stock_qty),
+            buying_price: String(it.buying_price ?? ""),
+            selling_price: String(it.selling_price ?? ""),
+            supplier: it.supplier || "",
+            type: it.type || "",
+            stock_qty: String(it.stock_qty ?? ""),
+            sheets_per_pack: it.sheets_per_pack ? String(it.sheets_per_pack) : "",
+            sheet_selling_price: it.sheet_selling_price ? String(it.sheet_selling_price) : "",
+            loose_sheets: it.loose_sheets ? String(it.loose_sheets) : "",
         });
         setOpen(true);
     };
 
     const onChange = (key, value) => setForm((f) => ({ ...f, [key]: value }));
 
+    const sheetsEnabled = Number(form.sheets_per_pack) > 0;
+
     const submit = async (e) => {
         e?.preventDefault?.();
         if (!form.name.trim()) return toast.error("Name is required");
         if (form.buying_price === "" || form.selling_price === "")
-            return toast.error("Prices are required");
+            return toast.error("Pack prices are required");
+        if (sheetsEnabled) {
+            if (!form.sheet_selling_price || Number(form.sheet_selling_price) <= 0) {
+                return toast.error("Sheet selling price is required when sheets per pack is set");
+            }
+        }
 
         const payload = {
             name: form.name.trim(),
@@ -93,6 +105,9 @@ const StoragePage = () => {
             supplier: form.supplier.trim(),
             type: form.type.trim(),
             stock_qty: parseInt(form.stock_qty || "0", 10),
+            sheets_per_pack: sheetsEnabled ? parseInt(form.sheets_per_pack, 10) : null,
+            sheet_selling_price: sheetsEnabled ? parseFloat(form.sheet_selling_price) : null,
+            loose_sheets: sheetsEnabled ? parseInt(form.loose_sheets || "0", 10) : 0,
         };
 
         setSaving(true);
@@ -127,36 +142,31 @@ const StoragePage = () => {
         }
     };
 
-    const stockBadge = (q) => {
-        if (q <= 0)
-            return (
-                <Badge className="rounded-full bg-rose-100 text-rose-700 hover:bg-rose-100">
-                    Out of stock
-                </Badge>
-            );
-        if (q <= 10)
-            return (
-                <Badge className="rounded-full bg-amber-100 text-amber-800 hover:bg-amber-100 low-stock">
-                    Low · {q}
-                </Badge>
-            );
-        return (
-            <Badge className="rounded-full bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
-                {q} in stock
-            </Badge>
-        );
+    const stockBadge = (it) => {
+        const s = stockSummary(it);
+        const cls =
+            s.level === "out"
+                ? "bg-rose-100 text-rose-700 hover:bg-rose-100"
+                : s.level === "low"
+                ? "bg-amber-100 text-amber-800 hover:bg-amber-100 low-stock"
+                : "bg-emerald-100 text-emerald-700 hover:bg-emerald-100";
+        return <Badge className={`rounded-full ${cls}`}>{s.label}</Badge>;
     };
 
     const totals = useMemo(() => {
-        const inv = items.reduce((s, x) => s + x.buying_price * x.stock_qty, 0);
-        const ret = items.reduce((s, x) => s + x.selling_price * x.stock_qty, 0);
-        const low = items.filter((x) => x.stock_qty <= 10).length;
-        return { inv, ret, low };
+        const inv = items.reduce(
+            (s, x) => s + (x.buying_price || 0) * (x.stock_qty || 0),
+            0
+        );
+        const low = items.filter((x) => {
+            const s = stockSummary(x);
+            return s.level === "low" || s.level === "out";
+        }).length;
+        return { inv, low };
     }, [items]);
 
     return (
         <div className="space-y-6">
-            {/* Header */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <StatCard
                     label="Total Items"
@@ -217,7 +227,8 @@ const StoragePage = () => {
                                 <th className="py-3 px-2 font-semibold">Type</th>
                                 <th className="py-3 px-2 font-semibold">Supplier</th>
                                 <th className="py-3 px-2 font-semibold text-right">Buy</th>
-                                <th className="py-3 px-2 font-semibold text-right">Sell</th>
+                                <th className="py-3 px-2 font-semibold text-right">Sell (Pack)</th>
+                                <th className="py-3 px-2 font-semibold text-right">Sell (Sheet)</th>
                                 <th className="py-3 px-2 font-semibold">Stock</th>
                                 <th className="py-3 px-2 font-semibold text-right">Actions</th>
                             </tr>
@@ -230,7 +241,18 @@ const StoragePage = () => {
                                     className="hover:bg-stone-50/60"
                                 >
                                     <td className="py-3 px-2">
-                                        <div className="font-semibold text-stone-900">{it.name}</div>
+                                        <div className="font-semibold text-stone-900 flex items-center gap-2">
+                                            {it.name}
+                                            {it.sheets_per_pack > 0 && (
+                                                <Badge
+                                                    variant="secondary"
+                                                    className="rounded-full text-[10px] bg-indigo-50 text-indigo-700 hover:bg-indigo-50"
+                                                >
+                                                    <Layers className="w-3 h-3 mr-1" />
+                                                    {it.sheets_per_pack}/pack
+                                                </Badge>
+                                            )}
+                                        </div>
                                         {it.barcode && (
                                             <div className="text-xs text-stone-400 flex items-center gap-1 mt-0.5">
                                                 <Barcode className="w-3 h-3" />
@@ -246,7 +268,12 @@ const StoragePage = () => {
                                     <td className="py-3 px-2 text-right font-display font-bold text-emerald-700">
                                         {formatIQD(it.selling_price)}
                                     </td>
-                                    <td className="py-3 px-2">{stockBadge(it.stock_qty)}</td>
+                                    <td className="py-3 px-2 text-right font-display font-bold text-indigo-700">
+                                        {it.sheets_per_pack > 0 && it.sheet_selling_price > 0
+                                            ? formatIQD(it.sheet_selling_price)
+                                            : <span className="text-stone-300">—</span>}
+                                    </td>
+                                    <td className="py-3 px-2">{stockBadge(it)}</td>
                                     <td className="py-3 px-2 text-right">
                                         <div className="inline-flex gap-1">
                                             <button
@@ -269,7 +296,7 @@ const StoragePage = () => {
                             ))}
                             {filtered.length === 0 && (
                                 <tr>
-                                    <td colSpan={7} className="py-12 text-center text-stone-400">
+                                    <td colSpan={8} className="py-12 text-center text-stone-400">
                                         <Package className="w-8 h-8 mx-auto mb-2 opacity-50" />
                                         No items found.
                                     </td>
@@ -291,7 +318,8 @@ const StoragePage = () => {
                             {editingId ? "Edit Item" : "Add New Item"}
                         </DialogTitle>
                         <DialogDescription>
-                            Fill in the details. Barcode is optional.
+                            Pack-level info is required. Sheet info is optional — set "Sheets per pack" if
+                            you want to sell individual sheets at the cashier.
                         </DialogDescription>
                     </DialogHeader>
                     <form onSubmit={submit} className="space-y-4">
@@ -314,7 +342,7 @@ const StoragePage = () => {
                                     placeholder="e.g. Tablet, Syrup, Injection"
                                 />
                             </Field>
-                            <Field label="Buying Price (IQD) *" testId="form-buy">
+                            <Field label="Buying Price per Pack (IQD) *" testId="form-buy">
                                 <Input
                                     data-testid="form-buy-input"
                                     type="number"
@@ -325,7 +353,7 @@ const StoragePage = () => {
                                     className="h-11 rounded-xl"
                                 />
                             </Field>
-                            <Field label="Selling Price (IQD) *" testId="form-sell">
+                            <Field label="Selling Price per Pack (IQD) *" testId="form-sell">
                                 <Input
                                     data-testid="form-sell-input"
                                     type="number"
@@ -345,7 +373,7 @@ const StoragePage = () => {
                                     placeholder="e.g. Pioneer Pharma"
                                 />
                             </Field>
-                            <Field label="Stock Quantity" testId="form-stock">
+                            <Field label="Stock (number of packs)" testId="form-stock">
                                 <Input
                                     data-testid="form-stock-input"
                                     type="number"
@@ -357,6 +385,70 @@ const StoragePage = () => {
                             </Field>
                         </div>
 
+                        {/* Sheet section */}
+                        <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4 space-y-4">
+                            <div className="flex items-center gap-2">
+                                <Layers className="w-4 h-4 text-indigo-600" />
+                                <h3 className="font-display font-bold text-stone-900 text-sm">
+                                    Sell by the sheet (optional)
+                                </h3>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <Field label="Sheets per pack" testId="form-spp">
+                                    <Input
+                                        data-testid="form-sheets-per-pack-input"
+                                        type="number"
+                                        min="0"
+                                        value={form.sheets_per_pack}
+                                        onChange={(e) =>
+                                            onChange("sheets_per_pack", e.target.value)
+                                        }
+                                        className="h-11 rounded-xl bg-white"
+                                        placeholder="e.g. 10"
+                                    />
+                                </Field>
+                                <Field
+                                    label={`Selling Price per Sheet (IQD)${
+                                        sheetsEnabled ? " *" : ""
+                                    }`}
+                                    testId="form-sheet-price"
+                                >
+                                    <Input
+                                        data-testid="form-sheet-price-input"
+                                        type="number"
+                                        min="0"
+                                        step="any"
+                                        value={form.sheet_selling_price}
+                                        onChange={(e) =>
+                                            onChange("sheet_selling_price", e.target.value)
+                                        }
+                                        disabled={!sheetsEnabled}
+                                        className="h-11 rounded-xl bg-white disabled:bg-stone-100"
+                                    />
+                                </Field>
+                                <Field
+                                    label="Loose sheets currently open"
+                                    testId="form-loose-sheets"
+                                >
+                                    <Input
+                                        data-testid="form-loose-sheets-input"
+                                        type="number"
+                                        min="0"
+                                        value={form.loose_sheets}
+                                        onChange={(e) =>
+                                            onChange("loose_sheets", e.target.value)
+                                        }
+                                        disabled={!sheetsEnabled}
+                                        className="h-11 rounded-xl bg-white disabled:bg-stone-100"
+                                        placeholder="0"
+                                    />
+                                </Field>
+                            </div>
+                            <p className="text-xs text-stone-500">
+                                Leave "Sheets per pack" empty to sell this item only by the pack.
+                            </p>
+                        </div>
+
                         <div>
                             <label className="text-xs font-semibold text-stone-600 mb-1.5 block uppercase tracking-wide">
                                 Barcode (optional)
@@ -366,17 +458,8 @@ const StoragePage = () => {
                                 value={form.barcode}
                                 onChange={(e) => onChange("barcode", e.target.value)}
                                 className="h-11 rounded-xl"
-                                placeholder="Type or scan a barcode"
+                                placeholder="Scan with USB reader or type a barcode"
                             />
-                            <div className="mt-3">
-                                <BarcodeScanner
-                                    testIdPrefix="storage-scanner"
-                                    onDetected={(code) => {
-                                        onChange("barcode", code);
-                                        toast.success("Barcode captured");
-                                    }}
-                                />
-                            </div>
                         </div>
 
                         <DialogFooter className="gap-2">
@@ -445,10 +528,7 @@ const StatCard = ({ label, value, color, testId }) => {
         rose: "bg-rose-50 text-rose-700 border-rose-100",
     };
     return (
-        <div
-            data-testid={testId}
-            className={`rounded-2xl border p-5 ${map[color]}`}
-        >
+        <div data-testid={testId} className={`rounded-2xl border p-5 ${map[color]}`}>
             <div className="text-xs uppercase tracking-wide font-semibold opacity-80">
                 {label}
             </div>
