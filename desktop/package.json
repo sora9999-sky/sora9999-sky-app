@@ -1,14 +1,10 @@
 {
-  "name": "avicenna-pharmacy-desktop",
-  "productName": "Avicenna Pharmacy",
+  "name": "jory-corner-pharmacy-desktop",
+  "productName": "Jory Corner Pharmacy",
   "version": "1.0.0",
   "description": "Fully offline desktop pharmacy management — Cashier + Storage. Data stored locally.",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/hhghi8819-crypto/app.git"
-  },
   "main": "main.js",
-  "author": "Avicenna Pharmacy",
+  "author": "Jory Corner Pharmacy",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
@@ -21,8 +17,8 @@
     "electron-builder": "^24.13.3"
   },
   "build": {
-    "appId": "com.avicenna.pharmacy",
-    "productName": "Avicenna Pharmacy",
+    "appId": "com.jorycorner.pharmacy",
+    "productName": "Jory Corner Pharmacy",
     "asar": true,
     "files": [
       "main.js",
@@ -43,7 +39,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Avicenna Pharmacy"
+      "shortcutName": "Jory Corner Pharmacy"
     }
   }
 }

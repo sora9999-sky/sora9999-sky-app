@@ -33,7 +33,7 @@ function wireIpc() {
             const stamp = new Date().toISOString().slice(0, 10);
             const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
                 title: 'Save backup',
-                defaultPath: `avicenna-pharmacy-backup-${stamp}.json`,
+                defaultPath: `jory-corner-pharmacy-backup-${stamp}.json`,
                 filters: [{ name: 'Backup file', extensions: ['json'] }],
             });
             if (canceled || !filePath) return { canceled: true };
@@ -76,7 +76,7 @@ function createWindow() {
         height: 900,
         minWidth: 1024,
         minHeight: 700,
-        title: 'Avicenna Pharmacy',
+        title: 'Jory Corner Pharmacy',
         icon: path.join(__dirname, 'assets', 'icon.ico'),
         backgroundColor: '#F9FAFB',
         autoHideMenuBar: true,
@@ -96,7 +96,7 @@ function createWindow() {
     const indexPath = path.join(__dirname, 'app', 'index.html');
     mainWindow.loadFile(indexPath).catch((err) => {
         dialog.showErrorBox(
-            'Failed to start Avicenna Pharmacy',
+            'Failed to start Jory Corner Pharmacy',
             `Could not load app from:\n${indexPath}\n\n${err.message}\n\nThe app build may be missing. Re-run build-exe.bat.`
         );
     });
@@ -143,8 +143,8 @@ function buildMenu() {
                     click: () => {
                         dialog.showMessageBox(mainWindow, {
                             type: 'info',
-                            title: 'About Avicenna Pharmacy',
-                            message: 'Avicenna Pharmacy Desktop',
+                            title: 'About Jory Corner Pharmacy',
+                            message: 'Jory Corner Pharmacy Desktop',
                             detail: `Version 1.0.0 — Offline edition.\nData file: ${db.getDbPath()}`,
                         });
                     },

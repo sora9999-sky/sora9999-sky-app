@@ -32,6 +32,27 @@ function persist() {
 
 function init(userDataPath) {
     DB_PATH = path.join(userDataPath, 'pharmacy.json');
+
+    // One-time migration from previous app folder (renamed from "Avicenna Pharmacy").
+    // If there's no data yet here but the old folder has a pharmacy.json, copy it.
+    if (!fs.existsSync(DB_PATH)) {
+        try {
+            const parent = path.dirname(userDataPath);
+            const oldCandidates = ['Avicenna Pharmacy'];
+            for (const oldName of oldCandidates) {
+                const oldPath = path.join(parent, oldName, 'pharmacy.json');
+                if (fs.existsSync(oldPath)) {
+                    fs.mkdirSync(userDataPath, { recursive: true });
+                    fs.copyFileSync(oldPath, DB_PATH);
+                    console.log(`Migrated existing data from "${oldName}" to current folder.`);
+                    break;
+                }
+            }
+        } catch (e) {
+            console.warn('Auto-migration of legacy data folder failed:', e);
+        }
+    }
+
     try {
         if (fs.existsSync(DB_PATH)) {
             const raw = fs.readFileSync(DB_PATH, 'utf8');
@@ -305,7 +326,7 @@ function getDbPath() {
 function exportAll() {
     return {
         version: 1,
-        app: 'Avicenna Pharmacy',
+        app: 'Jory Corner Pharmacy',
         exported_at: nowIso(),
         items: data.items,
         sales: data.sales,

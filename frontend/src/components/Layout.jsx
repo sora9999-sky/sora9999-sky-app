@@ -1,7 +1,8 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Pill, ShoppingCart, Boxes, Download, Upload } from "lucide-react";
+import { ShoppingCart, Boxes, Download, Upload } from "lucide-react";
+import RoseIcon from "@/components/RoseIcon";
 import {
     AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
     AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -55,15 +56,15 @@ const Layout = () => {
             <header className="sticky top-0 z-30 backdrop-blur bg-white/80 border-b border-stone-100">
                 <div className="max-w-[1400px] mx-auto px-6 py-4 flex items-center justify-between">
                     <div className="flex items-center gap-3" data-testid="brand-logo">
-                        <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-[0_8px_20px_rgba(16,185,129,0.3)]">
-                            <Pill className="w-5 h-5 text-white" strokeWidth={2.5} />
+                        <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-rose-400 to-rose-600 flex items-center justify-center shadow-[0_8px_20px_rgba(244,63,94,0.3)]">
+                            <RoseIcon className="w-6 h-6 text-white" strokeWidth={1.8} />
                         </div>
                         <div>
                             <div className="font-display font-bold text-lg leading-none text-stone-900">
-                                Avicenna
+                                Jory Corner
                             </div>
                             <div className="text-xs text-stone-500 mt-0.5">
-                                Pharmacy Management
+                                Pharmacy
                             </div>
                         </div>
                     </div>
@@ -125,7 +126,7 @@ const Layout = () => {
             </main>
 
             <footer className="text-center text-xs text-stone-400 py-4">
-                Avicenna Pharmacy · prices in IQD{IS_DESKTOP ? " · Offline edition" : ""}
+                Jory Corner Pharmacy · prices in IQD{IS_DESKTOP ? " · Offline edition" : ""}
             </footer>
 
             <AlertDialog open={confirmRestore} onOpenChange={setConfirmRestore}>
